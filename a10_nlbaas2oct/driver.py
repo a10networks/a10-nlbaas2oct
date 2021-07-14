@@ -375,9 +375,6 @@ def main():
         conf_lb_id_list = []
 
     if CONF.lb_id:
-        if not db_utils.get_loadbalancer_entry(n_session, CONF.lb_id):
-            print('Error: Provide valid --lb-id value.')
-            return
         conf_lb_id_list.append(CONF.lb_id)
 
     if CONF.project_id and db_sessions.get('k_session'):
