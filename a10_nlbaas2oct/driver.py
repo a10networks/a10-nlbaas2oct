@@ -341,7 +341,7 @@ def main():
     XOR_CLI_COMMANDS = (CONF.all, CONF.lb_id, CONF.project_id)
 
     if not any(XOR_CLI_COMMANDS) and not CONF.migration.lb_id_list:
-        print('Error: One of --all, --lb_id, --project_id must be '
+        print('Error: One of --all, --lb-id, --project-id must be '
               'specified or lb_id_list must be set in the config file.')
         return 1        
 
