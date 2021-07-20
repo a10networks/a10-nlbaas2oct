@@ -53,6 +53,9 @@ octavia_account_id =
 # Replace 127.0.0.1 above with the IP address of the database used by the
 # main octavia server. (Leave it as is if the database runs on this host.)
 
+# Connection string for the keystone databas
+keystone_db_connection =
+
 # Connection string for the neutron database
 neutron_db_connection =
 
@@ -72,6 +75,12 @@ a10_config_path = /etc/a10/config.py
 ## Step 2: Modify the config file
 
 #### Database connection string locations
+The `keystone_db_connection` can be found in the `/etc/keystone/keystone.conf` file under the `database` group.
+
+```
+[database]
+connection = mysql+pymysql://root:password@127.0.0.1/keystone?charset=utf8
+```
 
 The `neutron_db_connection` can be found in the `/etc/neutron/neutron.conf` file under the `database` group.
 
@@ -93,6 +102,9 @@ connection = mysql+pymysql://root:password@127.0.0.1:3306/octavia
 # Octavia service account ID or username (ex: admin)
 octavia_account_id = admin
 
+# Connection string for the keystone databas
+keystone_db_connection = mysql+pymysql://root:password@127.0.0.1/keystone?charset=utf8
+
 # Connection string for the neutron database
 neutron_db_connection = mysql+pymysql://user:password@127.0.0.1/neutron?charset=utf8
 
@@ -107,6 +119,9 @@ a10_config_path = /etc/a10/config.py
 <pre>
 # Octavia service account ID or username (ex: admin)
 octavia_account_id = admin
+
+# Connection string for the keystone databas
+keystone_db_connection = mysql+pymysql://root:password@127.0.0.1/keystone?charset=utf8
 
 # Connection string for the neutron database
 neutron_db_connection = mysql+pymysql://user:password@127.0.0.1/neutron?charset=utf8
@@ -123,6 +138,9 @@ a10_config_path = /etc/a10/config.py
 <pre>
 # Octavia service account ID or username (ex: admin)
 octavia_account_id = admin
+
+# Connection string for the keystone databas
+keystone_db_connection = mysql+pymysql://root:password@127.0.0.1/keystone?charset=utf8
 
 # Connection string for the neutron database
 neutron_db_connection = mysql+pymysql://user:password@127.0.0.1/neutron?charset=utf8

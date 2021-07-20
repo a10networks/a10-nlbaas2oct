@@ -62,7 +62,7 @@ migration_opts = [
                required=True,
                help='The octavia database connection string'),
     cfg.StrOpt('keystone_db_connection',
-               required=False,
+               required=True,
                help='The keystone database connection string'),
     cfg.StrOpt('a10_nlbaas_db_connection',
                required=False,
@@ -381,6 +381,11 @@ def main():
 
     if CONF.lb_id:
         conf_lb_id_list.append(CONF.lb_id)
+
+    if CONF.project_id and db_sessions.get('k_session'):
+        if not db_utils.get_project_entry(db_sessions['k_session'], CONF.project_id):
+            print('Error: Provide valid --project-id value.')
+            return
     
     lb_id_list = db_utils.get_loadbalancer_ids(n_session, conf_lb_id_list=conf_lb_id_list,
                                                conf_project_id=CONF.project_id,
