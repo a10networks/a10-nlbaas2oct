@@ -62,7 +62,7 @@ migration_opts = [
                required=True,
                help='The octavia database connection string'),
     cfg.StrOpt('keystone_db_connection',
-               required=False,
+               required=True,
                help='The keystone database connection string'),
     cfg.StrOpt('a10_nlbaas_db_connection',
                required=False,
