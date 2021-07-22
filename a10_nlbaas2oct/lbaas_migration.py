@@ -282,7 +282,7 @@ def migrate_member(o_session, project_id, pool_id, member):
         "VALUES (:id, :pool_id, :project_id, :subnet_id, :ip_address, "
         ":protocol_port, :weight, :operating_status, :enabled, "
         ":created_at, :updated_at, :provisioning_status, :name, :backup);",
-        {'id': member[0], 'pool_id': pool_id, 'project_id': project_id,
+        {'id': member[0], 'pool_id': pool_id, 'project_id': member[9],
          'subnet_id': member[1], 'ip_address': member[2],
          'protocol_port': member[3], 'weight': member[4],
          'operating_status': member[7], 'enabled': member[5],

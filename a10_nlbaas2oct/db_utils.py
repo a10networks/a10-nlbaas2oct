@@ -156,7 +156,7 @@ def get_sess_pers_by_pool(n_session, pool_id):
 def get_members_by_pool(n_session, pool_id):
     members = n_session.execute(
         "SELECT id, subnet_id, address, protocol_port, weight, "
-        "admin_state_up, provisioning_status, operating_status, name FROM "
+        "admin_state_up, provisioning_status, operating_status, name, project_id FROM "
         "lbaas_members WHERE pool_id = :pool_id;",
         {'pool_id': pool_id}).fetchall()
     return members
