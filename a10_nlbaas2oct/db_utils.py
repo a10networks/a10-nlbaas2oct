@@ -251,5 +251,12 @@ def get_parent_project(k_session, tenant_id):
 def get_project_entry(k_session, tenant_id):
     # Get the project entry from keystone DB
     tenant = k_session.execute(
-        "SELECT id FROM  project WHERE id = :id;", {'id': tenant_id}).fetchone()
+        "SELECT id FROM project WHERE id = :id;", {'id': tenant_id}).fetchone()
+    return tenant
+
+
+def get_tenant_by_name(k_session, name):
+    # Get the project entry from keystone DB
+    tenant = k_session.execute(
+        "SELECT id FROM project WHERE name = :name;", {'name': name}).fetchall()
     return tenant

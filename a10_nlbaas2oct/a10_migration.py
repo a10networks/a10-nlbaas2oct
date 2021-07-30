@@ -88,15 +88,14 @@ def migrate_thunder(a10_oct_session, loadbalancer_id, tenant_id,
         hierarchical_multitenancy = "disable"
         partition_name = device_info['shared_partition']
     elif device_info['v_method'] == "ADP":
+        hierarchical_multitenancy = "enable"
+        partition_name = tenant_id[0:13]
         if use_parent:
             if not k_session:
                 raise KeystoneDBConnectionException()
-            hierarchical_multitenancy = "enable"
             parent_id = db_utils.get_parent_project(k_session, tenant_id)
-            partition_name = parent_id[0][0:13]
-        else:
-            hierarchical_multitenancy = "enable"
-            partition_name = tenant_id[0:13]
+            if parent_id and parent_id[0] != "default":
+                partition_name = parent_id[0][0:13]
     else:
         raise IncorrectPartitionTypeException(device_info['v_method'])
 
