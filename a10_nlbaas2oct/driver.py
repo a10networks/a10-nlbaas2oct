@@ -100,13 +100,13 @@ def _migrate_flavor(LOG, a10_config, o_session, device_name):
     return fl_id
 
 
-def _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id):
+def _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id, tenant_device_binding):
     if a10_config.get('use_database'):
-        entry_name = aten2oct.get_device_name_by_tenant(db_sessions['a10_nlbaas_session'], tenant_id)
+        entry_name = aten2oct.get_device_name_by_tenant(db_sessions['a10_nlbaas_session'], tenant_device_binding)
     else:
         devices = a10_config.get('devices')
-        entry_name = acos_client.Hash(list(devices)).get_server(tenant_id)
-    
+        entry_name = acos_client.Hash(list(devices)).get_server(tenant_device_binding)
+
     device_info = a10_config.get_device(entry_name)
     device_name = device_info.get('name')
     LOG.info('Migrating Thunder config entry %s with name %s',
@@ -402,15 +402,35 @@ def main():
             n_lb = db_utils.get_loadbalancer_entry(n_session, lb_id)
             provider = n_lb[0]
             tenant_id = n_lb[1]
+            tenant_name = None
+            if not db_utils.get_project_entry(db_sessions['k_session'], tenant_id):
+                LOG.info('Tenant with id %s does not exist. Attempting to lookup '
+                         'the tenant using %s as the name instead of id.', tenant_id, tenant_id)
+                tenant_id = db_utils.get_tenant_by_name(db_sessions['k_session'], tenant_id)
+                if not tenant_id:
+                    LOG.warning('Skipping loadbalancer with id %s. It is owned by a tenant with id '
+                                'or name %s that does not exist.', lb_id, n_lb[1])
+                    continue
+                elif len(tenant_id) > 1:
+                    LOG.warning('Skipping loadbalancer with id %s. It was created with the tenant name %s '
+                                'instead of tenant id. This tenant name is used by multiple projects so it '
+                                'cannot be looked up. Please update the loadbalancer tenant_id in the db to'
+                                'match the intended tenant.', lb_id, n_lb[1])
+                    continue
+                else:
+                    tenant_name = n_lb[1]
+                    tenant_id = tenant_id[0][0]
+
             if provider != CONF.migration.provider_name:
                 LOG.info('Skipping loadbalancer with provider %s. '
                          'Does not match specified provider %s.',
                          provider, CONF.migration.provider_name)
                 continue
-            tenant_bindings.append(tenant_id)
 
+            tenant_device_binding = tenant_name if tenant_name else tenant_id
+            tenant_bindings.append(tenant_device_binding)
             if not CLEANUP_ONLY:
-                device_info = _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id)
+                device_info = _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id, tenant_device_binding)
                 if not device_info:
                     continue
                 device_name = device_info['name']
