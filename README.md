@@ -207,7 +207,7 @@ However, that foreign key relationship between VIP and VIP Port will still exist
 a10_nlbaas2oct --config-file /path/to/a10_nlbaas2oct.conf [--lb-id <lb_id> | --all | --project-id <project_id>]  --cleanup
 ```
 
-**This step is only necessary if the `delete_after_migration` was not set to `True` in the config.*
+**This step is only necessary if the `delete_after_migration` was not set to `True` in the config.**
 
 
 ### Note to Reader
