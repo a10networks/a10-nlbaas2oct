@@ -43,6 +43,8 @@ cli_opts = [
                help='Migrate all load balancers owned by this project'),
     cfg.BoolOpt('cleanup', default=False,
                help='Delete Neutron LBaaS db entries'),
+    cfg.StrOpt('flavor-id',
+               help='Flavor ID to migrate with the specified lb-id'),
 ]
 
 migration_opts = [
@@ -78,26 +80,40 @@ migration_opts = [
                 help='Name of LBaaS service provider'),
     cfg.BoolOpt('ignore_l7rule_status', default=False,
                 required=True,
-                help='Migrate all pending create l7rules')
+                help='Migrate all pending create l7rules'),
+    cfg.StrOpt('default_flavor_id', required=False,
+               help='Default flavor-id that will be used for each loadbalancer in the run')
 ]
 
 cfg.CONF.register_cli_opts(cli_opts)
 cfg.CONF.register_opts(migration_opts, group='migration')
 
 
-def _migrate_flavor(LOG, a10_config, o_session, device_name):
+def _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id_list):
     # Translate the name expressions into an Octavia flavor
     LOG.info('Migrating name expressions to flavors')
-    fl_id = None
+    fl_id = []
     try:
-        flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
-        if flavor_data:
-            fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
-            fl_id = nexpr2fl.create_flavor(o_session, fp_id)
+        if conf_flavor_id_list:
+            for conf_flavor_id in conf_flavor_id_list:
+                fl_id = db_utils.get_flavor_id(o_session, conf_flavor_id)
+                if fl_id:
+                    return fl_id
+                else:
+                    flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
+                    if flavor_data:
+                        fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
+                        fl_id = [nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id)]
+                    return fl_id
+        else:
+            flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
+            if flavor_data:
+                fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
+                fl_id = [nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id_list)]
+            return fl_id
     except Exception as e:
         LOG.exception("Skipping flavor migration due to: %s.", str(e))
         raise Exception
-    return fl_id
 
 
 def _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id, tenant_device_binding):
@@ -340,10 +356,18 @@ def main():
 
     XOR_CLI_COMMANDS = (CONF.all, CONF.lb_id, CONF.project_id)
 
+    if CONF.flavor_id and not CONF.lb_id:
+        print('Error: --lb-id should be specified with --flavor-id')
+        return 1
+
     if not any(XOR_CLI_COMMANDS) and not CONF.migration.lb_id_list:
         print('Error: One of --all, --lb-id, --project-id must be '
               'specified or lb_id_list must be set in the config file.')
-        return 1        
+        return 1
+
+    if CONF.flavor_id and (XOR_CLI_COMMANDS[0] or XOR_CLI_COMMANDS[2]):
+        print('Error: --flavor-id can only be used in conjunction with --lb-id')
+        return 1
 
     check_multi = lambda x: bool(x)
     commands = list(filter(check_multi, XOR_CLI_COMMANDS))
@@ -390,6 +414,14 @@ def main():
     lb_id_list = db_utils.get_loadbalancer_ids(n_session, conf_lb_id_list=conf_lb_id_list,
                                                conf_project_id=CONF.project_id,
                                                conf_all=CONF.all)
+
+    conf_flavor_id = []
+    if CONF.flavor_id:
+        conf_flavor_id.append(CONF.flavor_id)
+
+    elif CONF.migration.default_flavor_id:
+        conf_flavor_id.append(CONF.migration.default_flavor_id)
+
     fl_id = None
     failure_count = 0
     tenant_bindings = []
@@ -435,10 +467,11 @@ def main():
                     continue
                 device_name = device_info['name']
                 if device_name != curr_device_name:
-                    fl_id = _migrate_flavor(LOG, a10_config, o_session, device_name)
+                    fl_id_list = _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id)
                     curr_device_name = device_name
-                _migrate_slb(LOG, n_session, o_session, lb_id,
-                             fl_id, tenant_id, n_lb, CONF.migration.ignore_l7rule_status)
+                for fl_id in fl_id_list:
+                    _migrate_slb(LOG, n_session, o_session, lb_id,
+                                 fl_id, tenant_id, n_lb, CONF.migration.ignore_l7rule_status)
             _cleanup_slb(LOG, n_session, lb_id, CLEANUP_ONLY)
 
             # Rollback everything if we are in a trial run otherwise commit
