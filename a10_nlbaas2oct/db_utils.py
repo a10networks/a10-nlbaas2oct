@@ -264,6 +264,9 @@ def get_tenant_by_name(k_session, name):
 
 def get_flavor_id(o_session, conf_flavor_id):
     # Get flavor id from octavia DB
+    flavor_id_list = []
     flavor_id = o_session.execute(
         "SELECT id FROM octavia.flavor WHERE id = :id;", {'id': conf_flavor_id}).fetchone()
-    return flavor_id
+    if flavor_id:
+        flavor_id_list.append(flavor_id[0])
+    return flavor_id_list

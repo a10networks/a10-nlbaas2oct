@@ -82,7 +82,9 @@ migration_opts = [
                 required=True,
                 help='Migrate all pending create l7rules'),
     cfg.StrOpt('default_flavor_id', required=False,
-               help='Default flavor-id that will be used for each loadbalancer in the run')
+               help='Default flavor-id that will be used for each loadbalancer in the run'),
+    cfg.ListOpt('flavor_id_list',
+                help='List of flavor id\'s to migrate by mapping with lb_id_list')
 ]
 
 cfg.CONF.register_cli_opts(cli_opts)
@@ -92,25 +94,28 @@ cfg.CONF.register_opts(migration_opts, group='migration')
 def _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id_list):
     # Translate the name expressions into an Octavia flavor
     LOG.info('Migrating name expressions to flavors')
-    fl_id = []
+    fl_id = None
+    fl_id_list = []
     try:
         if conf_flavor_id_list:
             for conf_flavor_id in conf_flavor_id_list:
                 fl_id = db_utils.get_flavor_id(o_session, conf_flavor_id)
                 if fl_id:
-                    return fl_id
+                    fl_id_list.append(fl_id)
                 else:
                     flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
                     if flavor_data:
                         fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
-                        fl_id = [nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id)]
-                    return fl_id
+                        fl_id = nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id)
+                        fl_id_list.append(fl_id)
+            return fl_id_list
         else:
             flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
             if flavor_data:
                 fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
-                fl_id = [nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id_list)]
-            return fl_id
+                fl_id = nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id_list)
+                fl_id_list.append(fl_id)
+            return fl_id_list
     except Exception as e:
         LOG.exception("Skipping flavor migration due to: %s.", str(e))
         raise Exception
@@ -369,6 +374,12 @@ def main():
         print('Error: --flavor-id can only be used in conjunction with --lb-id')
         return 1
 
+    if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
+        if len(CONF.migration.flavor_id_list) > len(CONF.migration.lb_id_list):
+            print('Error: flavor_id_list cannot be mapped with lb_id_list '
+                  'as flavor_id_list holds more entries than lb_id_list')
+            return 1
+
     check_multi = lambda x: bool(x)
     commands = list(filter(check_multi, XOR_CLI_COMMANDS))
     if len(commands) > 1:
@@ -403,7 +414,7 @@ def main():
     if not conf_lb_id_list:
         conf_lb_id_list = []
 
-    if CONF.lb_id:
+    if CONF.lb_id and CONF.lb_id not in conf_lb_id_list:
         conf_lb_id_list.append(CONF.lb_id)
 
     if CONF.project_id and db_sessions.get('k_session'):
@@ -414,18 +425,29 @@ def main():
     lb_id_list = db_utils.get_loadbalancer_ids(n_session, conf_lb_id_list=conf_lb_id_list,
                                                conf_project_id=CONF.project_id,
                                                conf_all=CONF.all)
+    conf_flavor_id_list = []
 
-    conf_flavor_id = []
-    if CONF.flavor_id:
-        conf_flavor_id.append(CONF.flavor_id)
+    if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
+        conf_flavor_id_list.extend(CONF.migration.flavor_id_list)
+        fl_list_length = len(CONF.migration.flavor_id_list)
+        lb_list_length = len(CONF.migration.lb_id_list)
+        if fl_list_length < lb_list_length:
+            if CONF.migration.default_flavor_id:
+                for flavor_id in range(fl_list_length, lb_list_length):
+                    conf_flavor_id_list.insert(flavor_id, CONF.migration.default_flavor_id)
+
+    elif CONF.flavor_id:
+        conf_flavor_id_list.append(CONF.flavor_id)
 
     elif CONF.migration.default_flavor_id:
-        conf_flavor_id.append(CONF.migration.default_flavor_id)
+        conf_flavor_id_list.append(CONF.migration.default_flavor_id)
 
     fl_id = None
+    fl_id_list = []
     failure_count = 0
     tenant_bindings = []
     curr_device_name = None
+    counter = 0
     for lb_id in lb_id_list:
         lb_id = lb_id[0]
         try:
@@ -456,7 +478,7 @@ def main():
             if provider != CONF.migration.provider_name:
                 LOG.info('Skipping loadbalancer with provider %s. '
                          'Does not match specified provider %s.',
-                         provider, CONF.migration.provider_name)
+                          provider, CONF.migration.provider_name)
                 continue
 
             tenant_device_binding = tenant_name if tenant_name else tenant_id
@@ -466,12 +488,19 @@ def main():
                 if not device_info:
                     continue
                 device_name = device_info['name']
+                if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
+                    if fl_list_length < lb_list_length and not CONF.migration.default_flavor_id:
+                        for flavor_id in range(fl_list_length, lb_list_length):
+                            flavor = _migrate_flavor(LOG, a10_config, o_session, device_name, None)
+                            conf_flavor_id_list.insert(flavor_id, flavor)
+                            fl_list_length = fl_list_length + 1
                 if device_name != curr_device_name:
-                    fl_id_list = _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id)
+                    fl_id_list = _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id_list)
                     curr_device_name = device_name
-                for fl_id in fl_id_list:
-                    _migrate_slb(LOG, n_session, o_session, lb_id,
-                                 fl_id, tenant_id, n_lb, CONF.migration.ignore_l7rule_status)
+                fl_id = fl_id_list[counter]
+                counter = counter + 1
+                _migrate_slb(LOG, n_session, o_session, lb_id,
+                             fl_id, tenant_id, n_lb, CONF.migration.ignore_l7rule_status)
             _cleanup_slb(LOG, n_session, lb_id, CLEANUP_ONLY)
 
             # Rollback everything if we are in a trial run otherwise commit
