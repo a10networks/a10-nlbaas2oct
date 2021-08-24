@@ -509,7 +509,10 @@ def main():
                         n_session.commit()
                         LOG.info('Successful ' + lb_success_msg, lb_id)
                 else:
-                    full_success_msg = "Skipping the migration as the specified flavor cannot be found"
+                    o_session.rollback()
+                    n_session.rollback()
+                    LOG.warning("Skipping the migration as the specified flavor cannot be found")
+                    return
 
             _cleanup_slb(LOG, n_session, lb_id, CLEANUP_ONLY)
 
