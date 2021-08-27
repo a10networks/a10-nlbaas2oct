@@ -67,8 +67,8 @@ def create_flavorprofile(o_session, flavor_data):
     return flavorprofile_id
 
 
-def create_flavor(o_session, flavorprofile_id):
-    flavor_id = uuidutils.generate_uuid()
+def create_flavor(o_session, flavorprofile_id, conf_flavor_id):
+    flavor_id = conf_flavor_id if conf_flavor_id else uuidutils.generate_uuid()
     flavor_name = flavor_id[:10]
 
     result = o_session.execute(

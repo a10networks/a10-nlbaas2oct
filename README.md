@@ -68,6 +68,15 @@ octavia_db_connection =
 # Connection string for the A10 database used in the octavia env
 # a10_oct_connection =
 
+# Default flavor-id that will be used for the loadbalancer in the run
+# default_flavor_id =
+
+# Comma seperated list of loadbalancer ids to migrate or cleanup
+# lb_id_list =
+
+# Comma separated list of flavor ids that will be used in parallel with the entries in lb_id_list
+# flavor_id_list =
+
 # Path to config file. Default is /etc/a10/config.py
 a10_config_path = /etc/a10/config.py
 ```
@@ -195,6 +204,11 @@ a10_nlbaas2oct --config-file /path/to/a10_nlbaas2oct.conf --project-id <project_
 ### Migrate all lbaas objects
 ```
 a10_nlbaas2oct --config-file /path/to/a10_nlbaas2oct.conf --all
+```
+
+### Migrate a single loadbalancer with `--flavor-id` option
+```
+a10_nlbaas2oct --config-file /path/to/a10_nlbaas2oct.conf --lb-id <loadbalancer_id> --flavor-id <flavor_id>
 ```
 
 ## Step 4*: Cleanup post migration

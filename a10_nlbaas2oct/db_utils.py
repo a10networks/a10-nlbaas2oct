@@ -260,3 +260,13 @@ def get_tenant_by_name(k_session, name):
     tenant = k_session.execute(
         "SELECT id FROM project WHERE name = :name;", {'name': name}).fetchall()
     return tenant
+
+
+def get_flavor_id(o_session, conf_flavor_id):
+    # Get flavor id from octavia DB
+    flavor_id_list = []
+    flavor_id = o_session.execute(
+        "SELECT id FROM octavia.flavor WHERE id = :id;", {'id': conf_flavor_id}).fetchone()
+    if flavor_id:
+        flavor_id_list.append(flavor_id[0])
+    return flavor_id_list
