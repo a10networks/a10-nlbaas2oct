@@ -91,31 +91,51 @@ cfg.CONF.register_cli_opts(cli_opts)
 cfg.CONF.register_opts(migration_opts, group='migration')
 
 
-def _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id_list):
+def _migrate_flavor(LOG, a10_config, o_session, device_name):
     # Translate the name expressions into an Octavia flavor
     fl_id = None
-    fl_id_list = []
     try:
-        if conf_flavor_id_list:
-            for conf_flavor_id in conf_flavor_id_list:
-                fl_id = db_utils.get_flavor_id(o_session, conf_flavor_id)
-                if fl_id:
-                    fl_id_list.append(fl_id)
-                else:
-                    return
-            return fl_id_list
-        else:
-            LOG.info('Migrating name expressions to flavors')
-            flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
-            if flavor_data:
-                fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
-                fl_id = nexpr2fl.create_flavor(o_session, fp_id, conf_flavor_id_list)
-                fl_id_list.append(fl_id)
-            return fl_id_list
+        LOG.info('Migrating name expressions to flavors')
+        flavor_data = nexpr2fl.create_flavor_data(a10_config, device_name)
+        if flavor_data:
+            fp_id = nexpr2fl.create_flavorprofile(o_session, flavor_data)
+            fl_id = nexpr2fl.create_flavor(o_session, fp_id, None)
     except Exception as e:
         LOG.exception("Skipping flavor migration due to: %s.", str(e))
         raise Exception
+    return fl_id
 
+def _flavor_id_validation(LOG, o_session, flavor_id):
+    fl_id = None
+    try:
+        fl_id = db_utils.get_flavor_id(o_session, flavor_id)
+    except Exception as e:
+        LOG.exception("flavor_id_validation failed: %s", str(e))
+        raise Exception
+
+    if not fl_id:
+        raise Exception(_('Flavor id %s is not exist.'), fl_id)
+
+def _flavor_selection(LOG, a10_config, o_session, lb_id, flavor_list, flavor_idx, dev_flavor_map, device_name):
+    # --flavor-id should have highest priority (even than flavor_id_list)
+    if CONF.flavor_id and lb_id == CONF.lb_id:
+        _flavor_id_validation(LOG, o_session, CONF.flavor_id)
+        return CONF.flavor_id
+
+    if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
+        if len(flavor_list) > flavor_idx:
+            return flavor_list[flavor_idx]
+
+    if CONF.migration.default_flavor_id:
+        _flavor_id_validation(LOG, o_session, CONF.migration.default_flavor_id)
+        return CONF.migration.default_flavor_id
+
+    if device_name in dev_flavor_map:
+        return dev_flavor_map[device_name]
+    
+    flavor_id = _migrate_flavor(LOG, a10_config, o_session, device_name)
+    dev_flavor_map[device_name] = flavor_id
+    return flavor_id
 
 def _migrate_device(LOG, a10_config, db_sessions, lb_id, tenant_id, tenant_device_binding):
     if a10_config.get('use_database'):
@@ -422,6 +442,7 @@ def main():
                                                conf_project_id=CONF.project_id,
                                                conf_all=CONF.all)
     conf_flavor_id_list = []
+    flavor_map = {}
 
     if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
         conf_flavor_id_list.extend(CONF.migration.flavor_id_list)
@@ -432,18 +453,12 @@ def main():
                 for flavor_id in range(fl_list_length, lb_list_length):
                     conf_flavor_id_list.insert(flavor_id, CONF.migration.default_flavor_id)
 
-    elif CONF.flavor_id:
-        conf_flavor_id_list.append(CONF.flavor_id)
-
-    elif CONF.migration.default_flavor_id:
-        conf_flavor_id_list.append(CONF.migration.default_flavor_id)
-
     fl_id = None
     fl_id_list = []
     failure_count = 0
     tenant_bindings = []
     curr_device_name = None
-    counter = 0
+    lb_idx = 0
     for lb_id in lb_id_list:
         lb_id = lb_id[0]
         try:
@@ -484,37 +499,24 @@ def main():
                 if not device_info:
                     continue
                 device_name = device_info['name']
-                if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
-                    if fl_list_length < lb_list_length and not CONF.migration.default_flavor_id:
-                        for flavor_id in range(fl_list_length, lb_list_length):
-                            flavor = _migrate_flavor(LOG, a10_config, o_session, device_name, None)
-                            conf_flavor_id_list.insert(flavor_id, flavor)
-                            fl_list_length = fl_list_length + 1
-                if device_name != curr_device_name:
-                    fl_id_list = _migrate_flavor(LOG, a10_config, o_session, device_name, conf_flavor_id_list)
-                    curr_device_name = device_name
-                if fl_id_list:
-                    fl_id = fl_id_list[counter]
-                    counter = counter + 1
-                    _migrate_slb(LOG, n_session, o_session, lb_id,
-                                 fl_id, tenant_id, n_lb, CONF.migration.ignore_l7rule_status)
 
-                    # Rollback everything if we are in a trial run otherwise commit
-                    if CONF.migration.trial_run:
-                        o_session.rollback()
-                        n_session.rollback()
-                        LOG.info('Simulated ' + lb_success_msg + ' successful', lb_id)
-                    else:
-                        o_session.commit()
-                        n_session.commit()
-                        LOG.info('Successful ' + lb_success_msg, lb_id)
-                else:
-                    o_session.rollback()
-                    n_session.rollback()
-                    LOG.warning("Skipping the migration as the specified flavor cannot be found")
-                    return
+                fl_id = _flavor_selection(LOG, a10_config, o_session, lb_id, conf_flavor_id_list,
+                                          lb_idx, flavor_map, device_name)
+                _migrate_slb(LOG, n_session, o_session, lb_id, fl_id, tenant_id,
+                             n_lb, CONF.migration.ignore_l7rule_status)
+                lb_idx = lb_idx + 1
 
             _cleanup_slb(LOG, n_session, lb_id, CLEANUP_ONLY)
+
+            # Rollback everything if we are in a trial run otherwise commit
+            if CONF.migration.trial_run:
+                o_session.rollback()
+                n_session.rollback()
+                LOG.info('Simulated ' + lb_success_msg + ' successful', lb_id)
+            else:
+                o_session.commit()
+                n_session.commit()
+                LOG.info('Successful ' + lb_success_msg, lb_id)
 
         except Exception as e:
             n_session.rollback()
