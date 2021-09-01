@@ -114,7 +114,7 @@ def _flavor_id_validation(LOG, o_session, flavor_id):
         raise Exception
 
     if not fl_id:
-        raise Exception(_('Flavor id %s is not exist.'), fl_id)
+        raise Exception(_('This flavor id does not exist:'), flavor_id)
 
 def _flavor_selection(LOG, a10_config, o_session, lb_id, flavor_list, flavor_idx, dev_flavor_map, device_name):
     # --flavor-id should have highest priority (even than flavor_id_list)
@@ -124,6 +124,7 @@ def _flavor_selection(LOG, a10_config, o_session, lb_id, flavor_list, flavor_idx
 
     if CONF.migration.flavor_id_list and CONF.migration.lb_id_list:
         if len(flavor_list) > flavor_idx:
+            _flavor_id_validation(LOG, o_session, flavor_list[flavor_idx])
             return flavor_list[flavor_idx]
 
     if CONF.migration.default_flavor_id:
